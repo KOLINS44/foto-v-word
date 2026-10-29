@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' data: blob:; font-src 'self'; manifest-src 'self'">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1d4ed8">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Фото в Word">
+<title>Фото документа в Word</title>
+<style>
+  :root {
+    --bg: #f3f4f6; --panel: #ffffff; --ink: #111827; --muted: #6b7280; --line: #d1d5db;
+    --accent: #1d4ed8; --accent-ink: #ffffff; --ok: #047857; --warn: #b45309; --handle: #1d4ed8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 "Segoe UI", system-ui, -apple-system, Arial, sans-serif; }
+  header { padding: 18px 24px 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0; font-size: 21px; font-weight: 650; }
+  header p { margin: 4px 0 0; color: var(--muted); max-width: 900px; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 16px; padding: 16px 24px 24px; }
+  @media (max-width: 900px) { main { grid-template-columns: minmax(0, 1fr); padding: 12px 16px; } }
+  #left, aside, .card { min-width: 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  #drop { min-height: 420px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+          border: 2px dashed #9ca3af; border-radius: 12px; background: #fafafa; cursor: pointer; padding: 24px; }
+  #drop.over { border-color: var(--accent); background: #eff6ff; }
+  #drop strong { font-size: 19px; }
+  #drop span { color: var(--muted); margin-top: 6px; }
+  .pick { display: none; flex-direction: column; gap: 10px; width: 100%; max-width: 320px; }
+  .tabs { display: flex; gap: 4px; padding: 8px 8px 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
+  .tabs button { border: 1px solid transparent; border-bottom: none; background: none; padding: 7px 12px; border-radius: 8px 8px 0 0; cursor: pointer; color: var(--muted); font: inherit; white-space: nowrap; }
+  .tabs button.on { background: var(--panel); border-color: var(--line); color: var(--ink); font-weight: 600; margin-bottom: -1px; }
+  .tabs button:disabled { opacity: .45; cursor: default; }
+  .toolbar { display: flex; gap: 8px; align-items: center; padding: 10px 12px; flex-wrap: wrap; color: var(--muted); }
+  .view { padding: 0 12px 12px; }
+  #stage { position: relative; display: inline-block; max-width: 100%; touch-action: none; user-select: none; -webkit-user-select: none; }
+  #stage canvas { display: block; max-width: 100%; height: auto; background: #e5e7eb; }
+  .handle { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; background: var(--handle);
+            border: 3px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.35); cursor: grab; touch-action: none; }
+  .handle:active { cursor: grabbing; }
+  #clean { max-width: 100%; height: auto; border: 1px solid var(--line); background: #fff; }
+  #previewWrap { overflow: auto; background: #9ca3af; padding: 16px; border-radius: 6px; }
+  #preview { background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.25); transform-origin: top left; position: relative; color: #000; }
+  aside .card { padding: 14px 16px; margin-bottom: 12px; }
+  aside h2 { font-size: 15px; margin: 0 0 10px; }
+  label.opt { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0; }
+  label.opt input { margin-top: 3px; }
+  select { font: inherit; padding: 5px 6px; border: 1px solid var(--line); border-radius: 6px; width: 100%; margin-top: 4px; background: #fff; color: var(--ink); }
+  button.btn { font: inherit; border: 1px solid var(--line); background: #fff; color: var(--ink); padding: 7px 12px; border-radius: 7px; cursor: pointer; }
+  button.btn:hover { border-color: #9ca3af; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; width: 100%; padding: 10px 12px; }
+  button.primary:disabled { opacity: .5; cursor: default; }
+  .bar { height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; margin: 10px 0 6px; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  #status { color: var(--muted); min-height: 20px; }
+  #stats { font-size: 13px; color: var(--muted); margin: 8px 0; }
+  #stats b { color: var(--ink); font-weight: 600; }
+  .doubt { display: inline-block; background: #fef3c7; border-radius: 4px; padding: 0 4px; margin: 2px 2px 0 0; font-size: 13px; }
+  .note { font-size: 13px; color: var(--muted); }
+  #engine { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .hidden { display: none !important; }
+  .err { color: #b91c1c; }
+  /* телефон и планшет: съёмка вместо перетаскивания, крупные точки рамки */
+  @media (pointer: coarse) {
+    #drop { cursor: default; min-height: 300px; }
+    #drop .desk { display: none; }
+    .pick { display: flex; }
+    .handle { width: 34px; height: 34px; margin: -17px 0 0 -17px; }
+    button.btn, button.primary { padding: 11px 14px; }
+  }
+  /* узкий экран: одна колонка, главная кнопка сразу под фото */
+  @media (max-width: 640px) {
+    header { padding: 12px 16px 10px; }
+    header h1 { font-size: 18px; }
+    header p { font-size: 13px; }
+    main { padding: 10px; gap: 10px; }
+    aside { display: contents; }
+    #left { order: 1; }
+    #actionCard { order: 2; }
+    #settingsCard { order: 3; }
+    #tipsCard { order: 4; }
+    aside .card { margin-bottom: 0; }
+    .toolbar span { flex-basis: 100%; }
+    .tabs button { padding: 7px 9px; }
+    .wide { display: none; }
+    .view { padding: 0 8px 8px; }
+    #previewWrap { padding: 8px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Фото документа в Word</h1>
+  <p>Загрузите фото или скан. Модуль выпрямит лист, уберёт синие печати и подписи, распознает текст и соберёт документ Word с той же раскладкой. Всё работает на этом устройстве: фото никуда не отправляется.</p>
+</header>
+<main>
+  <section class="card" id="left">
+    <div id="drop" tabindex="0">
+      <strong class="desk">Перетащите фото документа сюда</strong>
+      <span class="desk">или нажмите, чтобы выбрать файл · можно вставить снимок из буфера (Ctrl+V)</span>
+      <span class="desk">JPG, PNG, WebP</span>
+      <div class="pick">
+        <strong>Сфотографируйте документ</strong>
+        <button class="primary" id="camBtn" type="button">📷 Сфотографировать</button>
+        <button class="btn" id="galBtn" type="button">Выбрать из галереи</button>
+      </div>
+      <input type="file" id="file" accept="image/*" hidden>
+      <input type="file" id="cam" accept="image/*" capture="environment" hidden>
+    </div>
+    <div id="work" class="hidden">
+      <div class="tabs">
+        <button data-tab="photo" class="on">Фото<span class="wide"> и рамка листа</span></button>
+        <button data-tab="clean" disabled>Очищенный лист</button>
+        <button data-tab="preview" disabled>Предпросмотр<span class="wide"> Word</span></button>
+      </div>
+      <div data-view="photo">
+        <div class="toolbar">
+          <span>Потяните за синие точки, если рамка легла не по краям листа.</span>
+          <button class="btn" id="rot">↻ Повернуть</button>
+          <button class="btn" id="full">Весь кадр</button>
+          <button class="btn" id="redetect">Найти лист заново</button>
+        </div>
+        <div class="view"><div id="stage"><canvas id="photo"></canvas></div></div>
+      </div>
+      <div data-view="clean" class="hidden"><div class="view" style="padding-top:12px"><canvas id="clean"></canvas></div></div>
+      <div data-view="preview" class="hidden"><div class="view" style="padding-top:12px"><div id="previewWrap"><div id="preview"></div></div>
+        <p class="note">Предпросмотр приблизительный: точный вид — в самом Word. Жёлтым отмечены слова, в которых распознавание не уверено.</p></div></div>
+    </div>
+  </section>
+  <aside>
+    <div class="card" id="settingsCard">
+      <h2>Настройки</h2>
+      <label class="opt"><input type="checkbox" id="optColor" checked><span>Убирать синие и цветные печати, подписи, штампы</span></label>
+      <label class="opt"><input type="checkbox" id="optHl"><span>Подсветить в Word сомнительные слова жёлтым</span></label>
+      <label class="opt"><input type="checkbox" id="optBreaks"><span>Жёсткие переносы строк как в оригинале</span></label>
+      <div style="margin-top:10px">Шрифт документа
+        <select id="optFont">
+          <option value="">Определить автоматически</option>
+          <option>Times New Roman</option>
+          <option>Arial</option>
+          <option>Courier New</option>
+        </select>
+      </div>
+    </div>
+    <div class="card" id="actionCard">
+      <button class="primary" id="go" disabled>Собрать документ Word</button>
+      <div class="bar"><i id="barFill"></i></div>
+      <div id="status">Загрузите фото, чтобы начать.</div>
+      <div id="result" class="hidden">
+        <div id="stats"></div>
+        <button class="primary" id="save">Скачать .docx</button>
+        <button class="btn hidden" id="share" style="width:100%;margin-top:8px">Поделиться… (Word, Telegram, почта)</button>
+        <div id="afterSave" class="hidden" style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn" id="openWord" style="flex:1">Открыть в Word</button>
+          <button class="btn" id="showFolder" style="flex:1">Показать в папке</button>
+        </div>
+        <div id="doubts" style="margin-top:10px"></div>
+      </div>
+      <div id="desktopOnly" class="hidden" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
+        <button class="btn" id="batch" style="width:100%">Несколько фото → документы в папку…</button>
+        <button class="btn hidden" id="openBatchDir" style="width:100%;margin-top:8px">Открыть папку с документами</button>
+      </div>
+      <p style="margin:12px 0 0"><button class="btn" id="again">Загрузить другое фото</button></p>
+      <div id="engine"></div>
+    </div>
+    <div class="card note" id="tipsCard">
+      <b style="color:var(--ink)">Как получить лучший результат</b><br>
+      Снимайте лист целиком, сверху, при ровном свете, без тени от телефона. Текст должен быть резким.<br><br>
+      Модуль не распознаёт рукописный текст. Номера, даты, фамилии и суммы проверьте в Word.
+    </div>
+  </aside>
+</main>
+<script src="metrics.js"></script>
+<script src="core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
